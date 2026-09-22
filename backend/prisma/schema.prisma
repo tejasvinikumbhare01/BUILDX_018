@@ -1,0 +1,334 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CITIZEN
+  RESPONDER
+  ADMIN
+}
+
+enum IncidentType {
+  FLOOD
+  FIRE
+  ROAD_BLOCKAGE
+  BUILDING_DAMAGE
+  LANDSLIDE
+  MEDICAL_EMERGENCY
+  OTHER
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  REPORTED
+  VERIFIED
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+enum RescuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RescueStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ResponderStatus {
+  AVAILABLE
+  ON_DUTY
+  DISPATCHED
+  OFF_DUTY
+}
+
+enum MissionStatus {
+  DISPATCHED
+  EN_ROUTE
+  ON_SCENE
+  COMPLETED
+  ABORTED
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  DANGER
+  CRITICAL
+}
+
+model User {
+  id             String            @id @default(uuid())
+  email          String            @unique
+  password       String
+  name           String
+  role           Role              @default(CITIZEN)
+  phone          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  incidents      Incident[]
+  rescueRequests RescueRequest[]
+  locations      ResponderLocation[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  @@index([role])
+}
+
+model Incident {
+  id              String           @id // Format: INC-YYYYMMDD-XXXXX
+  type            IncidentType
+  severity        Severity         @default(MEDIUM)
+  status          IncidentStatus   @default(REPORTED)
+  description     String
+  latitude        Float
+  longitude       Float
+  accuracy        Float?
+  address         String?
+  photoUrl        String?
+  peopleAffected  Int              @default(1)
+  rescueRequired  Boolean          @default(false)
+  reportedAt      DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  userId          String?
+  user            User?            @relation(fields: [userId], references: [id])
+
+  damageAssessments DamageAssessment[]
+
+  @@index([status])
+  @@index([type])
+  @@index([latitude, longitude])
+  @@index([reportedAt])
+}
+
+model RescueRequest {
+  id               String          @id // Format: RES-YYYYMMDD-XXXXX
+  emergencyType    String
+  numberOfPeople   Int             @default(1)
+  medicalEmergency Boolean         @default(false)
+  childrenCount    Int             @default(0)
+  elderlyCount     Int             @default(0)
+  vulnerableCount  Int             @default(0)
+  priority         RescuePriority  @default(HIGH)
+  status           RescueStatus    @default(PENDING)
+  description      String
+  latitude         Float
+  longitude        Float
+  accuracy         Float?
+  reportedAt       DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  userId           String?
+  user             User?           @relation(fields: [userId], references: [id])
+
+  assignedTeamId   String?
+  assignedTeam     RescueTeam?     @relation(fields: [assignedTeamId], references: [id])
+  missions         RescueMission[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([latitude, longitude])
+}
+
+model RescueTeam {
+  id                 String           @id @default(uuid())
+  name               String           @unique
+  leaderName         String
+  contact            String
+  capability         String           // e.g., "Flood Rescue", "Medical Evacuation", "Fire & Hazmat", "Search & Rescue"
+  status             ResponderStatus  @default(AVAILABLE)
+  latitude           Float?
+  longitude          Float?
+  lastLocationUpdate DateTime?
+  membersCount       Int              @default(4)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  rescueRequests     RescueRequest[]
+  missions           RescueMission[]
+
+  @@index([status])
+}
+
+model RescueMission {
+  id              String         @id @default(uuid())
+  rescueRequestId String
+  rescueRequest   RescueRequest  @relation(fields: [rescueRequestId], references: [id])
+  rescueTeamId    String
+  rescueTeam      RescueTeam     @relation(fields: [rescueTeamId], references: [id])
+  status          MissionStatus  @default(DISPATCHED)
+  notes           String?
+  dispatchedAt    DateTime       @default(now())
+  completedAt     DateTime?
+
+  @@index([status])
+}
+
+model ResponderLocation {
+  id          String    @id @default(uuid())
+  responderId String
+  responder   User      @relation(fields: [responderId], references: [id])
+  latitude    Float
+  longitude   Float
+  accuracy    Float?
+  heading     Float?
+  speed       Float?
+  timestamp   DateTime  @default(now())
+
+  @@index([responderId, timestamp])
+}
+
+model Shelter {
+  id               String    @id @default(uuid())
+  name             String
+  latitude         Float
+  longitude        Float
+  capacity         Int
+  currentOccupancy Int       @default(0)
+  medicalAvailable Boolean   @default(true)
+  foodAvailable    Boolean   @default(true)
+  waterAvailable   Boolean   @default(true)
+  contact          String
+  address          String
+  status           String    @default("ACTIVE") // ACTIVE, FULL, CLOSED
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([latitude, longitude])
+  @@index([status])
+}
+
+model Hospital {
+  id            String    @id @default(uuid())
+  name          String
+  latitude      Float
+  longitude     Float
+  emergencyBeds Int
+  icuBeds       Int
+  ambulances    Int
+  contact       String
+  address       String
+  status        String    @default("OPERATIONAL")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([latitude, longitude])
+  @@index([status])
+}
+
+model Resource {
+  id        String    @id @default(uuid())
+  name      String
+  category  String    // Equipment, Medical, Food, Transport, Water
+  quantity  Int
+  unit      String    // units, kits, liters, metric tons
+  location  String
+  status    String    @default("AVAILABLE")
+  updatedAt DateTime  @updatedAt
+}
+
+model Alert {
+  id         String        @id @default(uuid())
+  title      String
+  message    String
+  severity   AlertSeverity @default(WARNING)
+  latitude   Float
+  longitude  Float
+  radiusKm   Float         @default(10.0)
+  active     Boolean       @default(true)
+  expiresAt  DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([active])
+  @@index([latitude, longitude])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String    @default("INFO")
+  read      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  @@index([userId, read])
+}
+
+model DamageAssessment {
+  id                  String    @id @default(uuid())
+  incidentId          String?
+  incident            Incident? @relation(fields: [incidentId], references: [id])
+  imagePath           String
+  damageType          String    // Flood, Road damage, Building damage, Fire, Debris, Blocked road, Unknown
+  severity            String    // LOW, MEDIUM, HIGH, CRITICAL
+  confidence          Float     // 0.0 - 1.0
+  recommendedResponse String
+  aiAnalysisRaw       String?
+  createdAt           DateTime  @default(now())
+}
+
+model RiskPrediction {
+  id                    String    @id @default(uuid())
+  latitude              Float
+  longitude             Float
+  riskScore             Int       // 0 - 100
+  riskLevel             Severity  // LOW, MEDIUM, HIGH, CRITICAL
+  weatherFactor         Float
+  incidentDensityFactor Float
+  waterLevelFactor      Float
+  reasoning             String
+  calculatedAt          DateTime  @default(now())
+
+  @@index([latitude, longitude])
+}
+
+model EvacuationRoute {
+  id                   String    @id @default(uuid())
+  name                 String
+  originLat            Float
+  originLng            Float
+  destLat              Float
+  destLng              Float
+  distanceKm           Float
+  durationMin          Float
+  routeGeoJson         String
+  isBlockedRoadAvoided Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String    @id @default(uuid())
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  ipAddress String?
+  timestamp DateTime  @default(now())
+
+  @@index([timestamp])
+  @@index([entity, entityId])
+}
